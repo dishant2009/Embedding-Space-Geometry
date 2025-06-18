@@ -638,7 +638,7 @@ MIT License - Free to use and modify for educational purposes.
 ## Contact
 
 For questions, suggestions, or contributions:
-- GitHub: [[your-repository-link](https://github.com/dishant2009)]
+- GitHub: [[link](https://github.com/dishant2009)]
 - Email: [digdarshidishant@gmail.com]
 
 
