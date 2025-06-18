@@ -1,0 +1,1436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Embedding Space Geometry: Understanding How Meaning Becomes Mathematics</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // OrbitControls implementation
+        THREE.OrbitControls = function (object, domElement) {
+            this.object = object;
+            this.domElement = domElement;
+            this.enabled = true;
+            this.target = new THREE.Vector3();
+            
+            this.minDistance = 0;
+            this.maxDistance = Infinity;
+            
+            this.minPolarAngle = 0;
+            this.maxPolarAngle = Math.PI;
+            
+            this.autoRotate = false;
+            this.autoRotateSpeed = 2.0;
+            
+            this.enableDamping = true;
+            this.dampingFactor = 0.05;
+            
+            var scope = this;
+            var spherical = new THREE.Spherical();
+            var sphericalDelta = new THREE.Spherical();
+            var scale = 1;
+            var panOffset = new THREE.Vector3();
+            
+            var rotateStart = new THREE.Vector2();
+            var rotateEnd = new THREE.Vector2();
+            var rotateDelta = new THREE.Vector2();
+            
+            var STATE = { NONE: -1, ROTATE: 0, DOLLY: 1, PAN: 2 };
+            var state = STATE.NONE;
+            
+            this.update = function () {
+                var offset = new THREE.Vector3();
+                var quat = new THREE.Quaternion().setFromUnitVectors(
+                    object.up, new THREE.Vector3(0, 1, 0)
+                );
+                var quatInverse = quat.clone().invert();
+                var lastPosition = new THREE.Vector3();
+                var lastQuaternion = new THREE.Quaternion();
+                
+                return function update() {
+                    var position = scope.object.position;
+                    offset.copy(position).sub(scope.target);
+                    offset.applyQuaternion(quat);
+                    spherical.setFromVector3(offset);
+                    
+                    if (scope.autoRotate && state === STATE.NONE) {
+                        sphericalDelta.theta = 2 * Math.PI / 60 / 60 * scope.autoRotateSpeed;
+                    }
+                    
+                    spherical.theta += sphericalDelta.theta;
+                    spherical.phi += sphericalDelta.phi;
+                    spherical.phi = Math.max(scope.minPolarAngle, Math.min(scope.maxPolarAngle, spherical.phi));
+                    spherical.makeSafe();
+                    spherical.radius *= scale;
+                    spherical.radius = Math.max(scope.minDistance, Math.min(scope.maxDistance, spherical.radius));
+                    
+                    scope.target.add(panOffset);
+                    offset.setFromSpherical(spherical);
+                    offset.applyQuaternion(quatInverse);
+                    position.copy(scope.target).add(offset);
+                    scope.object.lookAt(scope.target);
+                    
+                    if (scope.enableDamping === true) {
+                        sphericalDelta.theta *= (1 - scope.dampingFactor);
+                        sphericalDelta.phi *= (1 - scope.dampingFactor);
+                        panOffset.multiplyScalar(1 - scope.dampingFactor);
+                    } else {
+                        sphericalDelta.set(0, 0, 0);
+                        panOffset.set(0, 0, 0);
+                    }
+                    
+                    scale = 1;
+                    
+                    if (lastPosition.distanceToSquared(scope.object.position) > 0.000001 ||
+                        8 * (1 - lastQuaternion.dot(scope.object.quaternion)) > 0.000001) {
+                        lastPosition.copy(scope.object.position);
+                        lastQuaternion.copy(scope.object.quaternion);
+                        return true;
+                    }
+                    return false;
+                };
+            }();
+            
+            function onMouseDown(event) {
+                if (scope.enabled === false) return;
+                event.preventDefault();
+                
+                if (event.button === 0) {
+                    state = STATE.ROTATE;
+                    rotateStart.set(event.clientX, event.clientY);
+                } else if (event.button === 1) {
+                    state = STATE.DOLLY;
+                } else if (event.button === 2) {
+                    state = STATE.PAN;
+                }
+            }
+            
+            function onMouseMove(event) {
+                if (scope.enabled === false) return;
+                event.preventDefault();
+                
+                if (state === STATE.ROTATE) {
+                    rotateEnd.set(event.clientX, event.clientY);
+                    rotateDelta.subVectors(rotateEnd, rotateStart).multiplyScalar(0.005);
+                    sphericalDelta.theta -= rotateDelta.x;
+                    sphericalDelta.phi -= rotateDelta.y;
+                    rotateStart.copy(rotateEnd);
+                    scope.update();
+                }
+            }
+            
+            function onMouseUp() {
+                if (scope.enabled === false) return;
+                state = STATE.NONE;
+            }
+            
+            function onMouseWheel(event) {
+                if (scope.enabled === false) return;
+                event.preventDefault();
+                
+                if (event.deltaY < 0) {
+                    scale *= 0.95;
+                } else {
+                    scale /= 0.95;
+                }
+                scope.update();
+            }
+            
+            domElement.addEventListener('mousedown', onMouseDown, false);
+            domElement.addEventListener('mousemove', onMouseMove, false);
+            domElement.addEventListener('mouseup', onMouseUp, false);
+            domElement.addEventListener('wheel', onMouseWheel, false);
+            domElement.addEventListener('contextmenu', function(e) { e.preventDefault(); }, false);
+        };
+    </script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            overflow-x: hidden;
+        }
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 18px;
+            margin-bottom: 20px;
+        }
+        .main-content {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .controls-panel {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .visualization-panel {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 600px;
+            position: relative;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .control-section {
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .control-section:last-child {
+            border-bottom: none;
+        }
+        .control-section h3 {
+            margin: 0 0 15px 0;
+            color: #444;
+            font-size: 18px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+            font-size: 14px;
+        }
+        input[type="text"], select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .vector-operation {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr auto 1fr;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .operator {
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+            color: #666;
+        }
+        .result-display {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .result-display h4 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .nearest-words {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .word-tag {
+            background-color: #e9ecef;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #495057;
+        }
+        .word-tag.highlight {
+            background-color: #007bff;
+            color: white;
+        }
+        .info-box {
+            background-color: #e8f4fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+        .legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            font-size: 14px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .stat-card {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            font-weight: normal;
+            cursor: pointer;
+        }
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 8px;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-size: 14px;
+            pointer-events: none;
+            z-index: 1000;
+            display: none;
+        }
+        .analogy-grid {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 10px;
+            align-items: center;
+        }
+        .insights-panel {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .insights-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .insight-card {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #28a745;
+        }
+        .insight-card h4 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            font-size: 18px;
+            color: #666;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        .highlight-animation {
+            animation: pulse 0.5s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Embedding Space Geometry: How Words Become Meaningful Vectors</h1>
+            <p class="subtitle">Explore how different embedding algorithms create geometric structures that encode semantic relationships</p>
+            <div class="info-box">
+                <strong>Key Insight:</strong> Word embeddings aren't random vectors - they form geometric structures where 
+                distances and directions encode meaning. Similar words cluster together, analogies become vector arithmetic, 
+                and semantic relationships become geometric patterns.
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="controls-panel">
+                <div class="control-section">
+                    <h3>Embedding Method</h3>
+                    <div class="control-group">
+                        <label for="embedding-type">Choose Embedding Type:</label>
+                        <select id="embedding-type" onchange="switchEmbeddingType()">
+                            <option value="word2vec">Word2Vec (Skip-gram)</option>
+                            <option value="glove">GloVe (Global Vectors)</option>
+                            <option value="contextual">Contextual (BERT-like)</option>
+                            <option value="custom">Custom Training Demo</option>
+                        </select>
+                    </div>
+                    <div id="embedding-description" class="result-display">
+                        <p><strong>Word2Vec:</strong> Learns by predicting context words. Creates linear relationships.</p>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h3>Vector Arithmetic</h3>
+                    <div class="vector-operation">
+                        <input type="text" id="vec-a" placeholder="king" value="king">
+                        <span class="operator">-</span>
+                        <input type="text" id="vec-b" placeholder="man" value="man">
+                        <span class="operator">+</span>
+                        <input type="text" id="vec-c" placeholder="woman" value="woman">
+                    </div>
+                    <button onclick="performVectorArithmetic()">Calculate Result</button>
+                    <div id="arithmetic-result" class="result-display" style="display: none;">
+                        <h4>Result: <span id="result-word"></span></h4>
+                        <div class="nearest-words" id="nearest-results"></div>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h3>Analogy Explorer</h3>
+                    <div class="analogy-grid">
+                        <div>
+                            <input type="text" id="analogy-a" placeholder="paris" value="paris">
+                            <span style="text-align: center; display: block; margin-top: 5px;">is to</span>
+                            <input type="text" id="analogy-b" placeholder="france" value="france">
+                        </div>
+                        <span class="operator" style="text-align: center;">as</span>
+                        <div>
+                            <input type="text" id="analogy-c" placeholder="london" value="london">
+                            <span style="text-align: center; display: block; margin-top: 5px;">is to</span>
+                            <input type="text" id="analogy-result" placeholder="?" disabled>
+                        </div>
+                    </div>
+                    <button onclick="solveAnalogy()">Solve Analogy</button>
+                </div>
+
+                <div class="control-section">
+                    <h3>Visualization Options</h3>
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" id="show-clusters" checked onchange="updateVisualization()">
+                            Show Semantic Clusters
+                        </label>
+                        <label>
+                            <input type="checkbox" id="show-connections" onchange="updateVisualization()">
+                            Show Similarity Connections
+                        </label>
+                        <label>
+                            <input type="checkbox" id="show-labels" checked onchange="updateVisualization()">
+                            Show Word Labels
+                        </label>
+                        <label>
+                            <input type="checkbox" id="animate-rotation" checked onchange="toggleRotation()">
+                            Auto-rotate View
+                        </label>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h3>Word Search</h3>
+                    <div class="control-group">
+                        <input type="text" id="search-word" placeholder="Enter word to highlight">
+                        <button onclick="searchWord()">Search & Focus</button>
+                        <button onclick="clearSearch()">Clear</button>
+                    </div>
+                    <div id="search-result" class="result-display" style="display: none;">
+                        <h4>Nearest Neighbors:</h4>
+                        <div class="nearest-words" id="search-neighbors"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="visualization-panel">
+                <div id="canvas-container">
+                    <div class="loading">Loading embeddings...</div>
+                </div>
+                <div class="legend">
+                    <h4 style="margin: 0 0 10px 0;">Semantic Categories</h4>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #FF6B6B;"></div>
+                        <span>Countries/Places</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #4ECDC4;"></div>
+                        <span>People/Roles</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #45B7D1;"></div>
+                        <span>Concepts/Abstract</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #F7DC6F;"></div>
+                        <span>Objects/Concrete</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #BB8FCE;"></div>
+                        <span>Actions/Verbs</span>
+                    </div>
+                </div>
+                <div class="tooltip" id="tooltip"></div>
+            </div>
+        </div>
+
+        <div class="insights-panel">
+            <h3>Understanding Embedding Geometry</h3>
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <h4>Linear Relationships</h4>
+                    <p>In Word2Vec and GloVe, semantic relationships are often linear. 
+                    The vector from "king" to "queen" is similar to "man" to "woman" - representing gender.</p>
+                    <button onclick="demonstrateLinearRelationships()">Show Examples</button>
+                </div>
+                <div class="insight-card">
+                    <h4>Clustering by Meaning</h4>
+                    <p>Words with similar meanings cluster together. Countries group with countries, 
+                    professions with professions. Distance ≈ semantic difference.</p>
+                    <button onclick="highlightClusters()">Highlight Clusters</button>
+                </div>
+                <div class="insight-card">
+                    <h4>Contextual vs Static</h4>
+                    <p>Word2Vec/GloVe create one vector per word. BERT creates different vectors 
+                    for the same word in different contexts.</p>
+                    <button onclick="showContextualDifference()">Compare Methods</button>
+                </div>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="vocab-size">1000</div>
+                    <div class="stat-label">Vocabulary Size</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="embedding-dim">3D</div>
+                    <div class="stat-label">Visualization</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="avg-similarity">0.23</div>
+                    <div class="stat-label">Avg Similarity</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="clustering-coef">0.67</div>
+                    <div class="stat-label">Clustering Coefficient</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let scene, camera, renderer, controls;
+        let wordPoints = {};
+        let wordLabels = {};
+        let embeddings = {};
+        let currentEmbedding = 'word2vec';
+        let animationId;
+        let isRotating = true;
+        let connections = [];
+        let clusters = {};
+        
+        // Sample embedding data (in real app, would load from file)
+        // All words are lowercase for consistency
+        const sampleVocabulary = {
+            // Countries and cities
+            'usa': { category: 'place', vec: [0.2, 0.8, 0.1] },
+            'canada': { category: 'place', vec: [0.25, 0.75, 0.15] },
+            'france': { category: 'place', vec: [-0.7, 0.3, 0.2] },
+            'germany': { category: 'place', vec: [-0.65, 0.35, 0.25] },
+            'spain': { category: 'place', vec: [-0.6, 0.25, 0.15] },
+            'italy': { category: 'place', vec: [-0.62, 0.28, 0.18] },
+            'japan': { category: 'place', vec: [0.8, -0.2, 0.3] },
+            'china': { category: 'place', vec: [0.75, -0.15, 0.35] },
+            'paris': { category: 'place', vec: [-0.68, 0.32, 0.22] },
+            'london': { category: 'place', vec: [-0.3, 0.6, 0.1] },
+            'tokyo': { category: 'place', vec: [0.78, -0.18, 0.32] },
+            'berlin': { category: 'place', vec: [-0.63, 0.37, 0.27] },
+            'england': { category: 'place', vec: [-0.32, 0.58, 0.12] },
+            'uk': { category: 'place', vec: [-0.31, 0.59, 0.11] },
+            
+            // People and roles - enhanced gender relationships
+            'king': { category: 'person', vec: [0.5, 0.3, 0.8] },
+            'queen': { category: 'person', vec: [0.2, 0.3, 0.8] },
+            'man': { category: 'person', vec: [0.6, 0.2, 0.4] },
+            'woman': { category: 'person', vec: [0.3, 0.2, 0.4] },
+            'boy': { category: 'person', vec: [0.58, 0.15, 0.3] },
+            'girl': { category: 'person', vec: [0.28, 0.15, 0.3] },
+            'father': { category: 'person', vec: [0.65, 0.25, 0.5] },
+            'mother': { category: 'person', vec: [0.35, 0.25, 0.5] },
+            'doctor': { category: 'person', vec: [0.1, 0.7, 0.6] },
+            'nurse': { category: 'person', vec: [-0.05, 0.65, 0.55] },
+            'teacher': { category: 'person', vec: [0.15, 0.75, 0.65] },
+            'student': { category: 'person', vec: [0.12, 0.68, 0.58] },
+            
+            // Abstract concepts
+            'love': { category: 'concept', vec: [-0.2, -0.3, 0.9] },
+            'hate': { category: 'concept', vec: [-0.25, -0.35, -0.8] },
+            'peace': { category: 'concept', vec: [-0.15, -0.25, 0.85] },
+            'war': { category: 'concept', vec: [-0.18, -0.28, -0.82] },
+            'happiness': { category: 'concept', vec: [-0.1, -0.2, 0.95] },
+            'sadness': { category: 'concept', vec: [-0.12, -0.22, -0.9] },
+            'freedom': { category: 'concept', vec: [-0.05, -0.15, 0.88] },
+            'justice': { category: 'concept', vec: [-0.08, -0.18, 0.86] },
+            
+            // Objects
+            'car': { category: 'object', vec: [0.7, 0.5, -0.2] },
+            'truck': { category: 'object', vec: [0.75, 0.55, -0.15] },
+            'bicycle': { category: 'object', vec: [0.65, 0.45, -0.25] },
+            'airplane': { category: 'object', vec: [0.8, 0.6, -0.1] },
+            'computer': { category: 'object', vec: [0.3, 0.8, -0.3] },
+            'phone': { category: 'object', vec: [0.28, 0.75, -0.32] },
+            'book': { category: 'object', vec: [0.35, 0.85, -0.28] },
+            'table': { category: 'object', vec: [0.4, 0.4, -0.4] },
+            
+            // Actions
+            'run': { category: 'action', vec: [-0.5, 0.7, -0.3] },
+            'walk': { category: 'action', vec: [-0.48, 0.68, -0.32] },
+            'jump': { category: 'action', vec: [-0.52, 0.72, -0.28] },
+            'speak': { category: 'action', vec: [-0.6, 0.5, -0.2] },
+            'think': { category: 'action', vec: [-0.58, 0.48, -0.22] },
+            'write': { category: 'action', vec: [-0.55, 0.52, -0.25] },
+            'read': { category: 'action', vec: [-0.53, 0.50, -0.27] }
+        };
+
+        // Different embedding transformations to show different algorithms
+        const embeddingTransforms = {
+            word2vec: (vec) => vec.map(v => v + (Math.random() - 0.5) * 0.15),
+            glove: (vec) => vec.map((v, i) => v * (1 + i * 0.2) + (Math.random() - 0.5) * 0.1),
+            contextual: (vec) => vec.map(v => v * (0.7 + Math.random() * 0.6)),
+            custom: (vec) => vec.map(v => v * 0.5 + (Math.random() - 0.5) * 0.5)
+        };
+
+        // Category colors
+        const categoryColors = {
+            place: 0xFF6B6B,
+            person: 0x4ECDC4,
+            concept: 0x45B7D1,
+            object: 0xF7DC6F,
+            action: 0xBB8FCE
+        };
+
+        // Initialize Three.js scene
+        function initScene() {
+            const container = document.getElementById('canvas-container');
+            container.innerHTML = ''; // Clear loading message
+
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf5f5f5);
+
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(
+                75, 
+                container.clientWidth / container.clientHeight, 
+                0.1, 
+                1000
+            );
+            camera.position.set(3, 3, 3);
+
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+
+            // Controls setup
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+
+            // Add axes helper
+            const axesHelper = new THREE.AxesHelper(2);
+            scene.add(axesHelper);
+
+            // Add grid
+            const gridHelper = new THREE.GridHelper(4, 10, 0xcccccc, 0xeeeeee);
+            gridHelper.position.y = -1.5;
+            scene.add(gridHelper);
+
+            // Handle resize
+            window.addEventListener('resize', onWindowResize);
+
+            // Initialize embeddings
+            loadEmbeddings();
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        // Load and visualize embeddings
+        function loadEmbeddings() {
+            // Clear existing points
+            Object.values(wordPoints).forEach(point => scene.remove(point));
+            Object.values(wordLabels).forEach(label => scene.remove(label));
+            wordPoints = {};
+            wordLabels = {};
+
+            // Transform embeddings based on current method
+            embeddings = {};
+            Object.entries(sampleVocabulary).forEach(([word, data]) => {
+                const transformedVec = embeddingTransforms[currentEmbedding](data.vec);
+                embeddings[word] = {
+                    ...data,
+                    vec: normalizeVector(transformedVec)
+                };
+            });
+
+            // Create 3D points
+            Object.entries(embeddings).forEach(([word, data]) => {
+                // Create sphere
+                const geometry = new THREE.SphereGeometry(0.05, 16, 16);
+                const material = new THREE.MeshPhongMaterial({ 
+                    color: categoryColors[data.category],
+                    emissive: categoryColors[data.category],
+                    emissiveIntensity: 0.2
+                });
+                const sphere = new THREE.Mesh(geometry, material);
+                
+                // Position based on embedding
+                sphere.position.set(data.vec[0] * 2, data.vec[1] * 2, data.vec[2] * 2);
+                sphere.userData = { word, category: data.category };
+                
+                scene.add(sphere);
+                wordPoints[word] = sphere;
+
+                // Create label
+                if (document.getElementById('show-labels').checked) {
+                    createLabel(word, sphere.position);
+                }
+            });
+
+            // Update clusters if needed
+            if (document.getElementById('show-clusters').checked) {
+                createClusters();
+            }
+
+            // Update stats
+            updateStats();
+        }
+
+        function createLabel(word, position) {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 256;
+            canvas.height = 64;
+            
+            context.font = '48px Arial';
+            context.fillStyle = '#333333';
+            context.textAlign = 'center';
+            context.fillText(word, 128, 48);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            
+            sprite.scale.set(0.5, 0.125, 1);
+            sprite.position.copy(position);
+            sprite.position.y += 0.15;
+            
+            scene.add(sprite);
+            wordLabels[word] = sprite;
+        }
+
+        function normalizeVector(vec) {
+            const magnitude = Math.sqrt(vec.reduce((sum, v) => sum + v * v, 0));
+            return vec.map(v => v / magnitude);
+        }
+
+        function cosineSimilarity(vec1, vec2) {
+            const dotProduct = vec1.reduce((sum, v, i) => sum + v * vec2[i], 0);
+            const mag1 = Math.sqrt(vec1.reduce((sum, v) => sum + v * v, 0));
+            const mag2 = Math.sqrt(vec2.reduce((sum, v) => sum + v * v, 0));
+            return dotProduct / (mag1 * mag2);
+        }
+
+        function findNearestWords(targetVec, n = 5, excludeWords = []) {
+            const similarities = Object.entries(embeddings)
+                .filter(([word, _]) => !excludeWords.includes(word))
+                .map(([word, data]) => ({
+                    word,
+                    similarity: cosineSimilarity(targetVec, data.vec)
+                }))
+                .sort((a, b) => b.similarity - a.similarity)
+                .slice(0, n);
+            
+            return similarities;
+        }
+
+        // Vector arithmetic
+        function performVectorArithmetic() {
+            const wordA = document.getElementById('vec-a').value.toLowerCase();
+            const wordB = document.getElementById('vec-b').value.toLowerCase();
+            const wordC = document.getElementById('vec-c').value.toLowerCase();
+            
+            if (!embeddings[wordA] || !embeddings[wordB] || !embeddings[wordC]) {
+                alert('One or more words not found in vocabulary');
+                return;
+            }
+            
+            // Perform arithmetic: A - B + C
+            const resultVec = embeddings[wordA].vec.map((v, i) => 
+                v - embeddings[wordB].vec[i] + embeddings[wordC].vec[i]
+            );
+            
+            // Find nearest words
+            const nearest = findNearestWords(resultVec, 5, [wordA, wordB, wordC]);
+            
+            // Display results
+            const resultDiv = document.getElementById('arithmetic-result');
+            resultDiv.style.display = 'block';
+            document.getElementById('result-word').textContent = nearest[0].word;
+            
+            const nearestDiv = document.getElementById('nearest-results');
+            nearestDiv.innerHTML = nearest.map((item, i) => 
+                `<span class="word-tag ${i === 0 ? 'highlight' : ''}">${item.word} (${item.similarity.toFixed(3)})</span>`
+            ).join('');
+            
+            // Highlight in visualization
+            highlightWords([wordA, wordB, wordC, nearest[0].word]);
+            
+            // Draw vectors - pass the computed vector for reference
+            drawVectorOperation(wordA, wordB, wordC, resultVec);
+        }
+
+        function drawVectorOperation(wordA, wordB, wordC, resultVec) {
+            // Remove existing arrows
+            scene.children
+                .filter(child => child.userData.isArrow)
+                .forEach(arrow => scene.remove(arrow));
+            
+            // Get positions
+            const posA = wordPoints[wordA].position;
+            const posB = wordPoints[wordB].position;
+            const posC = wordPoints[wordC].position;
+            
+            // Find the nearest word to the result vector
+            const nearest = findNearestWords(resultVec, 1, [wordA, wordB, wordC]);
+            const resultWord = nearest[0].word;
+            const resultPos = wordPoints[resultWord].position;
+            
+            // Calculate intermediate vectors
+            const vecAB = new THREE.Vector3().subVectors(posA, posB); // A - B
+            
+            // Draw the operation visually
+            // Red arrow showing A → B (what we're subtracting)
+            const arrowHelper1 = new THREE.ArrowHelper(
+                new THREE.Vector3().subVectors(posB, posA).normalize(),
+                posA,
+                posA.distanceTo(posB),
+                0xff0000,
+                0.3,
+                0.1
+            );
+            arrowHelper1.userData.isArrow = true;
+            scene.add(arrowHelper1);
+            
+            // Green arrow from C to actual result word
+            const arrowHelper2 = new THREE.ArrowHelper(
+                new THREE.Vector3().subVectors(resultPos, posC).normalize(),
+                posC,
+                posC.distanceTo(resultPos),
+                0x00ff00,
+                0.3,
+                0.1
+            );
+            arrowHelper2.userData.isArrow = true;
+            scene.add(arrowHelper2);
+            
+            // Add pulsing animation to result word
+            const resultPoint = wordPoints[resultWord];
+            const originalScale = resultPoint.scale.x;
+            let pulseTime = 0;
+            const pulseAnimation = () => {
+                pulseTime += 0.05;
+                const scale = originalScale * (1 + 0.3 * Math.sin(pulseTime));
+                resultPoint.scale.set(scale, scale, scale);
+                
+                if (pulseTime < Math.PI * 4) {
+                    requestAnimationFrame(pulseAnimation);
+                } else {
+                    resultPoint.scale.set(originalScale, originalScale, originalScale);
+                }
+            };
+            pulseAnimation();
+            
+            // Optional: Show where the computed vector actually landed
+            const computedPos = new THREE.Vector3(
+                resultVec[0] * 2,
+                resultVec[1] * 2,
+                resultVec[2] * 2
+            );
+            
+            // If the computed position is far from the actual result, show a subtle indicator
+            if (computedPos.distanceTo(resultPos) > 0.1) {
+                // Small transparent sphere at computed position
+                const computedGeometry = new THREE.SphereGeometry(0.03, 16, 16);
+                const computedMaterial = new THREE.MeshPhongMaterial({ 
+                    color: 0xffff00,
+                    transparent: true,
+                    opacity: 0.3
+                });
+                const computedSphere = new THREE.Mesh(computedGeometry, computedMaterial);
+                computedSphere.position.copy(computedPos);
+                computedSphere.userData.isArrow = true;
+                scene.add(computedSphere);
+                
+                // Thin line from computed to actual
+                const connectionGeometry = new THREE.BufferGeometry().setFromPoints([
+                    computedPos,
+                    resultPos
+                ]);
+                const connectionMaterial = new THREE.LineBasicMaterial({
+                    color: 0xffff00,
+                    opacity: 0.3,
+                    transparent: true
+                });
+                const connectionLine = new THREE.Line(connectionGeometry, connectionMaterial);
+                connectionLine.userData.isArrow = true;
+                scene.add(connectionLine);
+            }
+            const points = [];
+            for (let i = 0; i <= 20; i++) {
+                const t = i / 20;
+                const p = new THREE.Vector3().lerpVectors(posB, posA, t);
+                points.push(p);
+            }
+            const dottedGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            const dottedMaterial = new THREE.LineDashedMaterial({
+                color: 0xff0000,
+                dashSize: 0.05,
+                gapSize: 0.05,
+                opacity: 0.5,
+                transparent: true
+            });
+            const dottedLine = new THREE.Line(dottedGeometry, dottedMaterial);
+            dottedLine.computeLineDistances();
+            dottedLine.userData.isArrow = true;
+            scene.add(dottedLine);
+        }
+
+        function solveAnalogy() {
+            const a = document.getElementById('analogy-a').value.toLowerCase();
+            const b = document.getElementById('analogy-b').value.toLowerCase();
+            const c = document.getElementById('analogy-c').value.toLowerCase();
+            
+            if (!embeddings[a] || !embeddings[b] || !embeddings[c]) {
+                alert('One or more words not found in vocabulary. Please check your spelling.');
+                return;
+            }
+            
+            // Solve analogy: b - a + c
+            const resultVec = embeddings[b].vec.map((v, i) => 
+                v - embeddings[a].vec[i] + embeddings[c].vec[i]
+            );
+            
+            const nearest = findNearestWords(resultVec, 1, [a, b, c]);
+            document.getElementById('analogy-result').value = nearest[0].word;
+            
+            // Highlight words
+            highlightWords([a, b, c, nearest[0].word]);
+            
+            // Draw analogy relationships
+            drawAnalogyVisualization(a, b, c, nearest[0].word);
+        }
+        
+        function drawAnalogyVisualization(a, b, c, result) {
+            // Remove existing arrows
+            scene.children
+                .filter(child => child.userData.isArrow)
+                .forEach(arrow => scene.remove(arrow));
+            
+            // Draw relationship arrows
+            const arrowMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+            
+            // A to B relationship
+            const dir1 = new THREE.Vector3().subVectors(wordPoints[b].position, wordPoints[a].position);
+            const arrow1 = new THREE.ArrowHelper(
+                dir1.clone().normalize(),
+                wordPoints[a].position,
+                dir1.length(),
+                0x00ffff,
+                0.25,
+                0.08
+            );
+            arrow1.userData.isArrow = true;
+            scene.add(arrow1);
+            
+            // C to result relationship (should be parallel to A->B)
+            const dir2 = new THREE.Vector3().subVectors(wordPoints[result].position, wordPoints[c].position);
+            const arrow2 = new THREE.ArrowHelper(
+                dir2.clone().normalize(),
+                wordPoints[c].position,
+                dir2.length(),
+                0x00ff00,
+                0.25,
+                0.08
+            );
+            arrow2.userData.isArrow = true;
+            scene.add(arrow2);
+        }
+
+        function highlightWords(words) {
+            // Reset all colors and sizes
+            Object.entries(wordPoints).forEach(([word, point]) => {
+                const category = embeddings[word].category;
+                point.material.color.setHex(categoryColors[category]);
+                point.material.emissiveIntensity = 0.2;
+                point.scale.set(1, 1, 1);
+            });
+            
+            // Highlight selected words
+            words.forEach((word, i) => {
+                if (wordPoints[word]) {
+                    if (i === words.length - 1) {
+                        // Special highlighting for result word
+                        wordPoints[word].material.color.setHex(0x00ff00);
+                        wordPoints[word].material.emissiveIntensity = 0.8;
+                        wordPoints[word].scale.set(1.8, 1.8, 1.8);
+                    } else {
+                        // Regular highlighting for input words
+                        wordPoints[word].material.color.setHex(0xff0000);
+                        wordPoints[word].material.emissiveIntensity = 0.5;
+                        wordPoints[word].scale.set(1.5, 1.5, 1.5);
+                    }
+                }
+            });
+        }
+
+        function searchWord() {
+            const searchTerm = document.getElementById('search-word').value.toLowerCase();
+            
+            if (!embeddings[searchTerm]) {
+                alert('Word not found in vocabulary');
+                return;
+            }
+            
+            // Find nearest neighbors
+            const nearest = findNearestWords(embeddings[searchTerm].vec, 6, [searchTerm]);
+            
+            // Display results
+            const resultDiv = document.getElementById('search-result');
+            resultDiv.style.display = 'block';
+            
+            const neighborsDiv = document.getElementById('search-neighbors');
+            neighborsDiv.innerHTML = nearest.map(item => 
+                `<span class="word-tag">${item.word} (${item.similarity.toFixed(3)})</span>`
+            ).join('');
+            
+            // Highlight and focus
+            highlightWords([searchTerm, ...nearest.map(n => n.word)]);
+            
+            // Focus camera on word
+            const targetPos = wordPoints[searchTerm].position;
+            controls.target.copy(targetPos);
+            camera.position.set(
+                targetPos.x + 2,
+                targetPos.y + 2,
+                targetPos.z + 2
+            );
+        }
+
+        function clearSearch() {
+            document.getElementById('search-word').value = '';
+            document.getElementById('search-result').style.display = 'none';
+            
+            // Reset highlighting
+            Object.entries(wordPoints).forEach(([word, point]) => {
+                const category = embeddings[word].category;
+                point.material.color.setHex(categoryColors[category]);
+                point.scale.set(1, 1, 1);
+                point.material.emissiveIntensity = 0.2;
+            });
+        }
+
+        function createClusters() {
+            // Remove existing clusters
+            Object.values(clusters).forEach(cluster => scene.remove(cluster));
+            clusters = {};
+            
+            // Group words by category
+            const categoryGroups = {};
+            Object.entries(embeddings).forEach(([word, data]) => {
+                if (!categoryGroups[data.category]) {
+                    categoryGroups[data.category] = [];
+                }
+                categoryGroups[data.category].push(wordPoints[word].position);
+            });
+            
+            // Create convex hull for each category
+            Object.entries(categoryGroups).forEach(([category, positions]) => {
+                if (positions.length < 3) return;
+                
+                // Calculate center
+                const center = new THREE.Vector3();
+                positions.forEach(pos => center.add(pos));
+                center.divideScalar(positions.length);
+                
+                // Create transparent sphere around cluster
+                const maxDist = Math.max(...positions.map(pos => center.distanceTo(pos)));
+                const geometry = new THREE.SphereGeometry(maxDist + 0.2, 16, 16);
+                const material = new THREE.MeshPhongMaterial({
+                    color: categoryColors[category],
+                    transparent: true,
+                    opacity: 0.1,
+                    side: THREE.BackSide
+                });
+                
+                const sphere = new THREE.Mesh(geometry, material);
+                sphere.position.copy(center);
+                
+                scene.add(sphere);
+                clusters[category] = sphere;
+            });
+        }
+
+        function switchEmbeddingType() {
+            currentEmbedding = document.getElementById('embedding-type').value;
+            
+            // Update description
+            const descriptions = {
+                word2vec: "Word2Vec: Learns by predicting context words. Creates linear relationships.",
+                glove: "GloVe: Combines global matrix factorization with local context. More stable geometry.",
+                contextual: "Contextual (BERT-like): Creates different vectors for same word in different contexts.",
+                custom: "Custom Training: Watch how embeddings form during training."
+            };
+            
+            document.getElementById('embedding-description').innerHTML = 
+                `<p><strong>${descriptions[currentEmbedding]}</strong></p>`;
+            
+            // Reload embeddings with new transformation
+            loadEmbeddings();
+        }
+
+        function updateVisualization() {
+            // Update labels
+            const showLabels = document.getElementById('show-labels').checked;
+            Object.values(wordLabels).forEach(label => {
+                label.visible = showLabels;
+            });
+            
+            // Update clusters
+            const showClusters = document.getElementById('show-clusters').checked;
+            if (showClusters && Object.keys(clusters).length === 0) {
+                createClusters();
+            } else if (!showClusters) {
+                Object.values(clusters).forEach(cluster => scene.remove(cluster));
+                clusters = {};
+            }
+            
+            // Update connections
+            const showConnections = document.getElementById('show-connections').checked;
+            if (showConnections) {
+                createConnections();
+            } else {
+                connections.forEach(conn => scene.remove(conn));
+                connections = [];
+            }
+        }
+
+        function createConnections() {
+            // Remove existing connections
+            connections.forEach(conn => scene.remove(conn));
+            connections = [];
+            
+            // Create connections for high similarity pairs
+            const threshold = 0.6;
+            const words = Object.keys(embeddings);
+            
+            for (let i = 0; i < words.length; i++) {
+                for (let j = i + 1; j < words.length; j++) {
+                    const similarity = cosineSimilarity(
+                        embeddings[words[i]].vec,
+                        embeddings[words[j]].vec
+                    );
+                    
+                    if (similarity > threshold) {
+                        const geometry = new THREE.BufferGeometry().setFromPoints([
+                            wordPoints[words[i]].position,
+                            wordPoints[words[j]].position
+                        ]);
+                        
+                        const material = new THREE.LineBasicMaterial({
+                            color: 0xcccccc,
+                            transparent: true,
+                            opacity: (similarity - threshold) / (1 - threshold)
+                        });
+                        
+                        const line = new THREE.Line(geometry, material);
+                        scene.add(line);
+                        connections.push(line);
+                    }
+                }
+            }
+        }
+
+        function toggleRotation() {
+            isRotating = document.getElementById('animate-rotation').checked;
+        }
+
+        function demonstrateLinearRelationships() {
+            // Show multiple gender relationships
+            const examples = [
+                ['king', 'queen', 'man', 'woman'],
+                ['father', 'mother', 'boy', 'girl']
+            ];
+            
+            let index = 0;
+            const showNext = () => {
+                if (index < examples.length) {
+                    const [a, b, c, d] = examples[index];
+                    document.getElementById('vec-a').value = a;
+                    document.getElementById('vec-b').value = c;
+                    document.getElementById('vec-c').value = d;
+                    performVectorArithmetic();
+                    index++;
+                    setTimeout(showNext, 3000);
+                }
+            };
+            
+            showNext();
+        }
+
+        function highlightClusters() {
+            const categories = Object.keys(categoryColors);
+            let index = 0;
+            
+            const highlightNext = () => {
+                if (index < categories.length) {
+                    const category = categories[index];
+                    
+                    // Dim all words
+                    Object.entries(wordPoints).forEach(([word, point]) => {
+                        point.material.opacity = 0.3;
+                        point.material.transparent = true;
+                    });
+                    
+                    // Highlight category
+                    Object.entries(embeddings)
+                        .filter(([_, data]) => data.category === category)
+                        .forEach(([word, _]) => {
+                            wordPoints[word].material.opacity = 1;
+                            wordPoints[word].scale.set(1.5, 1.5, 1.5);
+                        });
+                    
+                    index++;
+                    setTimeout(() => {
+                        // Reset
+                        Object.values(wordPoints).forEach(point => {
+                            point.material.opacity = 1;
+                            point.material.transparent = false;
+                            point.scale.set(1, 1, 1);
+                        });
+                        
+                        highlightNext();
+                    }, 2000);
+                }
+            };
+            
+            highlightNext();
+        }
+
+        function showContextualDifference() {
+            // Switch between embedding types to show difference
+            const types = ['word2vec', 'contextual', 'word2vec'];
+            let index = 0;
+            
+            const switchNext = () => {
+                if (index < types.length) {
+                    document.getElementById('embedding-type').value = types[index];
+                    switchEmbeddingType();
+                    index++;
+                    setTimeout(switchNext, 2000);
+                }
+            };
+            
+            switchNext();
+        }
+
+        function updateStats() {
+            // Calculate statistics
+            const vocabSize = Object.keys(embeddings).length;
+            document.getElementById('vocab-size').textContent = vocabSize;
+            
+            // Calculate average similarity
+            let totalSim = 0;
+            let count = 0;
+            const words = Object.keys(embeddings);
+            
+            for (let i = 0; i < words.length; i++) {
+                for (let j = i + 1; j < words.length; j++) {
+                    totalSim += cosineSimilarity(
+                        embeddings[words[i]].vec,
+                        embeddings[words[j]].vec
+                    );
+                    count++;
+                }
+            }
+            
+            const avgSim = totalSim / count;
+            document.getElementById('avg-similarity').textContent = avgSim.toFixed(3);
+            
+            // Calculate clustering coefficient (simplified)
+            const categoryCount = {};
+            Object.values(embeddings).forEach(data => {
+                categoryCount[data.category] = (categoryCount[data.category] || 0) + 1;
+            });
+            
+            const clusteringCoef = Object.values(categoryCount).reduce((sum, count) => 
+                sum + (count / vocabSize) * (count / vocabSize), 0
+            );
+            document.getElementById('clustering-coef').textContent = clusteringCoef.toFixed(3);
+        }
+
+        // Animation loop
+        function animate() {
+            animationId = requestAnimationFrame(animate);
+            
+            // Auto-rotate if enabled
+            if (isRotating && controls) {
+                controls.autoRotate = true;
+                controls.autoRotateSpeed = 0.5;
+            } else if (controls) {
+                controls.autoRotate = false;
+            }
+            
+            if (controls) controls.update();
+            if (renderer && scene && camera) renderer.render(scene, camera);
+        }
+
+        // Mouse interaction
+        function setupMouseInteraction() {
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+            const tooltip = document.getElementById('tooltip');
+            
+            renderer.domElement.addEventListener('mousemove', (event) => {
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(Object.values(wordPoints));
+                
+                if (intersects.length > 0) {
+                    const word = intersects[0].object.userData.word;
+                    tooltip.textContent = word;
+                    tooltip.style.display = 'block';
+                    tooltip.style.left = event.clientX + 10 + 'px';
+                    tooltip.style.top = event.clientY - 30 + 'px';
+                } else {
+                    tooltip.style.display = 'none';
+                }
+            });
+            
+            renderer.domElement.addEventListener('click', (event) => {
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(Object.values(wordPoints));
+                
+                if (intersects.length > 0) {
+                    const word = intersects[0].object.userData.word;
+                    document.getElementById('search-word').value = word;
+                    searchWord();
+                }
+            });
+        }
+
+        // Initialize everything
+        window.onload = () => {
+            // Check WebGL support
+            if (!window.WebGLRenderingContext) {
+                document.getElementById('canvas-container').innerHTML = 
+                    '<div class="loading">WebGL is not supported in your browser.</div>';
+                return;
+            }
+            
+            initScene();
+            animate();
+            setupMouseInteraction();
+        };
+    </script>
+</body>
+</html>
